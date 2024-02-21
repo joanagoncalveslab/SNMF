@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
-
 <h1><br>
 <a href="https://github.com/joanagoncalveslab/SNMF/">SNMF</a></h1>
 
