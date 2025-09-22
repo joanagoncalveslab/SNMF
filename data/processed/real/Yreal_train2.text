@@ -1,0 +1,5 @@
+	train2_OGG1_1_real	train2_RNF168_1_real	train2_UNG_1_real	train2_ATP2B4_2_real	train2_ATP2B4_3_real	train2_MLH1_1_real	train2_MSH6_2_real	train2_MSH6_3_real	train2_PMS1_1_real	train2_PMS2_1_real
+0	0.0	0.0	0.0	1.0	1.0	0.0	0.0	0.0	0.0	0.0
+1	0.0	0.0	0.0	0.0	0.0	1.0	1.0	1.0	1.0	1.0
+2	0.0	1.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+3	1.0	0.0	1.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
