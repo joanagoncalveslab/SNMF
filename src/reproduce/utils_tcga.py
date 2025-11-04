@@ -29,7 +29,7 @@ from statsmodels.stats.multitest import multipletests
 # --- AnnData ---
 from anndata import AnnData
 
-def build_tcga_adata(cancer, project_root, bootstrap="dirichlet", lc_suffix=1):
+def build_tcga_adata(cancer, project_root, bootstrap="Multinomial", lc_suffix=1):
     """
     Build TCGA AnnData object with associated annotations and predictions.
 
@@ -61,8 +61,8 @@ def build_tcga_adata(cancer, project_root, bootstrap="dirichlet", lc_suffix=1):
 
     # Model path (original bootstrap_comparison results)
     model_path = os.path.join(
-        project_root, "results", "analysis", "bootstrap_comparison",
-        f"SNMF_results_{bootstrap}_lc{lc_suffix}"
+        project_root, "results", "analysis", "bootstrap_comparison_new",
+        f"SNMF_results_{bootstrap}_lc0{lc_suffix}"
     )
 
     annot_dir = os.path.join(data_dir, 'annotations', cancer)
@@ -114,7 +114,7 @@ def build_tcga_adata(cancer, project_root, bootstrap="dirichlet", lc_suffix=1):
         else:
             raise ValueError(f"Mismatch: Yhat has {Yhat.shape[1]} columns, but 'pathway' has {len(class_names)} labels.")
         uns['Yhat'] = Yhat
-
+        
     # Exposures from SNMF
     etest_path = os.path.join(snmf_dir, "Exposures_test.txt")
     if os.path.exists(etest_path):
@@ -122,7 +122,7 @@ def build_tcga_adata(cancer, project_root, bootstrap="dirichlet", lc_suffix=1):
         exposures_test.index = ['-'.join(s.split('-')[:3]) for s in exposures_test.index]
         exposures_test = exposures_test.loc[X.index]
         annotated_exposures_path = os.path.join(
-            model_path, "run_0", "SBS96", "Suggested_Solution", "SBS96_De-Novo_Solution",
+            model_path, "split_10", "SBS96", "Suggested_Solution", "SBS96_De-Novo_Solution",
             "Activities", "Avg_Signature_Exposure_Annotated.txt"
         )
         if os.path.exists(annotated_exposures_path):
@@ -131,8 +131,23 @@ def build_tcga_adata(cancer, project_root, bootstrap="dirichlet", lc_suffix=1):
                 exposures_test.columns = annotated.columns
         uns['exposures_test'] = exposures_test
 
-    # COSMIC exposures
-    for cosmic_type in ["norm", "counts"]:
+
+    # # COSMIC exposures
+    # for cosmic_type in ["norm", "counts"]:
+    #     c_dir = os.path.join(
+    #         project_root, "results", "fit_cosmic", f"{cancer}_{cosmic_type}",
+    #         "Assignment_Solution", "Activities"
+    #     )
+    #     c_file = os.path.join(c_dir, "Assignment_Solution_Activities.txt")
+    #     if os.path.exists(c_file):
+    #         exp = pd.read_csv(c_file, sep="\t", index_col=0)
+    #         exp.index = ['-'.join(s.split('-')[:3]) for s in exp.index]
+    #         uns[f'cosmic_exposures_{cosmic_type}'] = exp.loc[X.index]
+
+    # COSMIC exposures (norm, counts, and new counts_exome)
+
+    # COSMIC exposures (norm, counts, and new counts_exome)
+    for cosmic_type in ["norm", "counts", "counts_exome", "counts_exome_exclude"]:
         c_dir = os.path.join(
             project_root, "results", "fit_cosmic", f"{cancer}_{cosmic_type}",
             "Assignment_Solution", "Activities"
@@ -141,7 +156,16 @@ def build_tcga_adata(cancer, project_root, bootstrap="dirichlet", lc_suffix=1):
         if os.path.exists(c_file):
             exp = pd.read_csv(c_file, sep="\t", index_col=0)
             exp.index = ['-'.join(s.split('-')[:3]) for s in exp.index]
-            uns[f'cosmic_exposures_{cosmic_type}'] = exp.loc[X.index]
+            try:
+                uns[f'cosmic_exposures_{cosmic_type}'] = exp.loc[X.index]
+            except KeyError:
+                # If X.index are mutation types, try columns (samples)
+                uns[f'cosmic_exposures_{cosmic_type}'] = exp
+            # print(f"   Loaded: {cosmic_type} exposures ({exp.shape[0]} samples, {exp.shape[1]} signatures)")
+        # else:
+            # print(f"   WARNING: missing exposure file for {cosmic_type}")
+
+
 
     # Logistic regression predictions from COSMIC
     lr_pred_path = os.path.join(
@@ -704,11 +728,28 @@ def plot_mw_gene_stats(
         # annotate significant genes
         texts = []
         if annotate:
+            dx, dy = -0.5, 0.5  # shift left & up (starting bias)
             for idx, row in df.iterrows():
                 if row[hue] < pval_threshold:
-                    texts.append(ax.text(row[x], row[y], idx, ha='center', size=5, color='black', weight='light'))
+                    texts.append(ax.text(
+                        row[x] + dx, row[y] + dy, idx,
+                        ha='center', va='bottom',
+                        size=7.5, color='black'
+                    ))
                     annotated.append((idx, row[y]))
-            adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='-', color='black', lw=0.3))
+
+            # make label spacing larger & arrows clearer
+            adjust_text(
+                texts, ax=ax,
+                arrowprops=dict(arrowstyle='-', color='black', lw=0.5),
+                expand_points=(4, 4),    # how far labels stay from points (bigger = more distance)
+                expand_text=(1.4, 1.4),      # how far labels repel each other
+                force_points=0.5,            # stronger push from data points
+                force_text=0.2,              # stronger push between labels
+                only_move={'points': 'xy', 'texts': 'xy'},  # move mostly vertically
+                lim=1000                     # allow more optimization iterations
+            )
+
             if verbose:
                 print(f"Genes with FDR < {pval_threshold}:")
                 for g, val in annotated:

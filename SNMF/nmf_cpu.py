@@ -85,6 +85,7 @@ class NMF:
         self._lr = lr
         self._report_loss = report_loss
         self._generator = generator
+        # print(init_method)
         self._W, self._H, self._B= self._initialise_wh(init_method)
         self._neg_mag = {}
         self._results = {}
@@ -113,7 +114,7 @@ class NMF:
         #     for i in range(self._V.shape[0]):
         #         vin = np.mat(self._V.cpu().numpy()[i])
         #         W[i,:,:], H[i,:,:] = nv.initialize(vin, self._rank, options={'flag': 0})
-        #
+        
         # elif init_method == 'nndsvda':
         #     W = np.zeros([self._V.shape[0], self._V.shape[1], self._rank])
         #     H = np.zeros([self._V.shape[0], self._rank, self._V.shape[2]])
@@ -121,7 +122,7 @@ class NMF:
         #     for i in range(self._V.shape[0]):
         #         vin = np.mat(self._V.cpu().numpy()[i])
         #         W[i,:,:], H[i,:,:] = nv.initialize(vin, self._rank, options={'flag': 1})
-        #
+        
         # elif init_method == 'nndsvdar':
         #     W = np.zeros([self._V.shape[0], self._V.shape[1], self._rank])
         #     H = np.zeros([self._V.shape[0], self._rank, self._V.shape[2]])
@@ -176,11 +177,11 @@ class NMF:
         # Y_hat -> (C, N)
         Z = self.B @ self.H
         # add max for stability
-        e_x = np.exp(Z - torch.max(Z, 1)[0].unsqueeze(dim=1))
-        e_x_sum = torch.sum(e_x, 1).unsqueeze(dim=1)
-        e_x_sum[e_x_sum == 0] = 1e-20
-        # return e_x / e_x_sum + 1e-20
-        return e_x / e_x_sum + 1e-30
+        # Stable softmax (Torch version)
+        Z = Z - torch.amax(Z, dim=1, keepdim=True)  # shift by max for numerical stability
+        e_x = torch.exp(Z)
+        sum_e_x = torch.sum(e_x, dim=1, keepdim=True).clamp(min=1e-30)
+        return e_x / sum_e_x
 
     @property
     def conv(self):
@@ -213,8 +214,11 @@ class NMF:
 
     @property
     def _fro_loss(self):
-        # calculate frobenius reconstruction error
-        return (torch.norm(self._V - self.reconstruction, p='fro', dim=(1,2)))[0]
+        # calculate - normalized - frobenius reconstruction error
+        Vnorm = torch.norm(self._V, p='fro', dim=(1, 2)).clamp(min=1e-30)
+        RecErr = torch.norm(self._V - self.reconstruction, p='fro', dim=(1, 2))
+        return (RecErr / Vnorm)[0]
+        # return (torch.norm(self._V - self.reconstruction, p='fro', dim=(1,2)))[0]
 
 
     # @property ---> _ce_loss uses np.log on a torch tensor → this can yield NaNs/Infs.
@@ -229,8 +233,10 @@ class NMF:
    
     @property
     def _ce_loss(self):
+        """Stable cross-entropy loss normalized by number of samples."""
         P = torch.clamp(self.Y_hat, min=1e-30)
-        return - torch.sum(self._Y * torch.log(P))
+        N = self._Y.shape[2]  # number of samples
+        return - torch.sum(self._Y * torch.log(P)) / N
 
 
 
@@ -271,6 +277,84 @@ class NMF:
             return True
         self._prev_loss = self._kl_loss
         return False
+
+    # @property
+    # def _super_loss_converged(self):
+    #     """
+    #     Check convergence of both reconstruction (KL/Frobenius) and classification (CE) loss
+    #     using rolling relative improvement and user-defined tolerances.
+    #     """
+    #     # initialize tracking vars
+    #     if not hasattr(self, "_loss_history"):
+    #         self._loss_history = []
+    #         self._ce_history = []
+    #         self._best_tot = float("inf")
+    #         self._no_improve_count = 0
+    #         self._patience = 5              # number of windows allowed without improvement
+    #         self._window = 200              # iterations per window
+    #         self._rel_improve_min = 1e-3    # 0.1% threshold
+
+    #     # compute current losses
+    #     kl_loss = float(self._kl_loss.item()) if hasattr(self._kl_loss, "item") else float(self._kl_loss)
+    #     ce_loss = float(self._ce_loss.item()) if hasattr(self._ce_loss, "item") else float(self._ce_loss)
+    #     Ltot = kl_loss + self._lambda_c * ce_loss
+
+    #     # initialize on first iteration
+    #     if not self._iter:
+    #         self._loss_init = kl_loss
+    #         self._ce_loss_init = ce_loss
+    #         self._prev_loss = kl_loss
+    #         self._prev_ce_loss = ce_loss
+    #         self._kl_converged = False
+    #         self._ce_converged = False
+    #         return False
+
+    #     # --- running history for smoother convergence check ---
+    #     self._loss_history.append(Ltot)
+    #     self._ce_history.append(ce_loss)
+    #     if len(self._loss_history) > self._window:
+    #         self._loss_history.pop(0)
+    #         self._ce_history.pop(0)
+
+    #     # --- check relative improvement every window ---
+    #     if self._iter % self._window == 0:
+    #         mean_L = np.mean(self._loss_history)
+    #         rel_improve = (self._best_tot - mean_L) / (abs(self._best_tot) + 1e-12)
+    #         if rel_improve > self._rel_improve_min:
+    #             self._best_tot = mean_L
+    #             self._no_improve_count = 0
+    #         else:
+    #             self._no_improve_count += 1
+
+    #     # --- fine-grained tolerances (from your original) ---
+    #     rel_kl = abs(self._prev_loss - kl_loss) / (abs(self._loss_init) + 1e-12)
+    #     rel_ce = abs(self._prev_ce_loss - ce_loss) / (abs(self._ce_loss_init) + 1e-12)
+
+    #     if rel_kl < self._tolerance:
+    #         self._kl_converged = True
+    #     if rel_ce < self._tolerance_ce:
+    #         self._ce_converged = True
+
+    #     # --- stopping criteria ---
+    #     # (1) both losses stabilized below tolerance, or
+    #     # (2) patience exceeded without improvement
+    #     stop_condition = (
+    #         (self._kl_converged and self._ce_converged)
+    #         or (self._no_improve_count >= self._patience)
+    #     )
+
+    #     # --- update trackers ---
+    #     self._prev_loss = kl_loss
+    #     self._prev_ce_loss = ce_loss
+
+    #     if stop_condition and self._iter > self.min_iterations:
+    #         self._conv = self._iter
+    #         print(f"[early stop] Iter={self._iter}, ΔKL={rel_kl:.2e}, ΔCE={rel_ce:.2e}, "
+    #             f"NoImprove={self._no_improve_count}")
+    #         return True
+
+    #     return False
+
 
     @property
     def _super_loss_converged(self):
@@ -345,6 +429,12 @@ class NMF:
 
 
         with torch.no_grad():
+            # Optional warm start (e.g., from unsupervised NMF)
+            if hasattr(self, "_W") and hasattr(self, "_H") and hasattr(self, "_B"):
+                self._W = self._W.clone()
+                self._H = self._H.clone()
+                self._B = self._B.clone()
+
             def stop_iterations():
                 stop = (self._V.shape[0] == 1) and \
                        (self._iter % self._test_conv == 0) and \
@@ -354,6 +444,7 @@ class NMF:
                     pass
                     #print("loss converged with {} iterations".format(self._iter))
                 return  [stop, self._iter]
+
 
             if (beta == 2 and not supervised):
                 for self._iter in range(self.max_iterations):
@@ -369,8 +460,8 @@ class NMF:
 
                     N = self._V.shape[2]  # number of samples
 
-                    # self._H_new = self.H * ((self.W.transpose(1, 2) @ self._V) - (self._lambda_c/2) * self.B.transpose(1,2) @ (self.Y_hat - self._Y) ) / (self.W.transpose(1, 2) @ (self.W @ self.H))
-                    self._H_new = self.H * ((self.W.transpose(1,2) @ self._V) - (self._lambda_c/2) * self.B.transpose(1,2) @ ((self.Y_hat - self._Y) / N)) / (self.W.transpose(1,2) @ (self.W @ self.H))
+                    self._H_new = self.H * ((self.W.transpose(1, 2) @ self._V) - (self._lambda_c/2) * self.B.transpose(1,2) @ (self.Y_hat - self._Y) ) / (self.W.transpose(1, 2) @ (self.W @ self.H))
+                    # self._H_new = self.H * ((self.W.transpose(1,2) @ self._V) - (self._lambda_c/2) * self.B.transpose(1,2) @ ((self.Y_hat - self._Y) / N)) / (self.W.transpose(1,2) @ (self.W @ self.H))
 
                     #TODO: store magnitudes:
                     self._neg_H = self._H_new < 0
@@ -401,7 +492,7 @@ class NMF:
                     #TODO: Normalize signatures
                     # self._B = self.B - self._lr * (self.Y_hat - self._Y) @ self.H.transpose(1,2) + self._lambda_p * self.B
                     self._B_new = (1 - 2 * self._lambda_p) * self.B - self._lr * (self.Y_hat - self._Y) @ self.H.transpose(1,2)
-                    self._B_new = (1 - 2 * self._lambda_p) * self.B - self._lr * ((self.Y_hat - self._Y) / N) @ self.H.transpose(1,2)
+                    # self._B_new = (1 - 2 * self._lambda_p) * self.B - self._lr * ((self.Y_hat - self._Y) / N) @ self.H.transpose(1,2)
 
 
                     if torch.isnan(self._H_new).any():

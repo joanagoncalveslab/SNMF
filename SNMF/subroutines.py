@@ -307,7 +307,7 @@ def nnmf_cpu(genomes, Y, lambda_c, lambda_p, lr, nfactors, init="nndsvd", execut
     return W, H, B, similarities, neg_mag, learncurve, acc, f1, Lrec, Lce, Ltot, epochs
 
 
-def nnmf_cpu_refit(genomes, Y, W, lambda_c, lambda_p, lr, nfactors, init="nndsvd", execution_parameters=None, generator=None):
+def nnmf_cpu_refit(genomes, Y, W, lambda_c, lambda_p, lr, nfactors, init="random", execution_parameters=None, generator=None):
     Y = torch.from_numpy(Y).float()
     genomes = torch.from_numpy(genomes).float()
     min_iterations = execution_parameters["min_NMF_iterations"]
@@ -317,7 +317,7 @@ def nnmf_cpu_refit(genomes, Y, W, lambda_c, lambda_p, lr, nfactors, init="nndsvd
     precision = execution_parameters["precision"]
     net = nmf_cpu.NMF(genomes, Y, lambda_c=lambda_c, lambda_p=lambda_p, lr=lr, rank=nfactors,
                       min_iterations=min_iterations, max_iterations=max_iterations, tolerance=tolerance,
-                      test_conv=test_conv, init_method=init, generator=generator, floating_point_precision=precision)
+                      test_conv=test_conv, init_method="random", generator=generator, floating_point_precision=precision)
     net.refit(W)
 
     Hs = []

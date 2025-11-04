@@ -116,7 +116,43 @@ class SNMFClassifier(BaseEstimator, ClassifierMixin, TransformerMixin):
         Yc = Y.T[None, :, :]      # (1, classes, samples)
         return V, Yc
 
-    # ----- sklearn API -----
+    # # ----- sklearn API -----
+    # def fit(self, X, y):
+    #     rng = self.generator or np.random.default_rng(self.random_state)
+
+    #     X, Y = self._check_Xy(X, y)
+    #     V, Yc = self._to_core_shapes(X, Y)
+
+    #     # Instantiate your core
+    #     self.core_ = CoreNMF(
+    #         V=torch.from_numpy(V),
+    #         Y=torch.from_numpy(Yc),
+    #         rank=self.n_components,
+    #         lambda_c=self.lambda_c,
+    #         lambda_p=self.lambda_p,
+    #         lr=self.lr,
+    #         report_loss=self.report_loss,
+    #         max_iterations=self.max_iterations,
+    #         tolerance=self.tolerance,
+    #         tolerance_ce=self.tolerance_ce,
+    #         test_conv=self.test_conv,
+    #         init_method=self.init_method,
+    #         floating_point_precision=self.floating_point_precision,
+    #         min_iterations=self.min_iterations,
+    #         generator=rng,
+    #     )
+    #     self.core_.fit(beta=self.beta, supervised=self.supervised)
+
+    #     # Extract learned params; remove batch dim
+    #     self.W_ = self.core_.W.detach().cpu().numpy()[0]   # (F, K)
+    #     self.H_ = self.core_.H.detach().cpu().numpy()[0]   # (K, N)
+    #     self.B_ = self.core_.B.detach().cpu().numpy()[0]   # (C, K)
+
+    #     self.reconstruction_err_ = float(self.core_._fro_loss.item())
+    #     self.history_ = dict(self.core_.results)
+    #     self.converged_at_ = int(getattr(self.core_, "_conv", 0))
+    #     return self
+
     def fit(self, X, y):
         rng = self.generator or np.random.default_rng(self.random_state)
 
@@ -148,10 +184,28 @@ class SNMFClassifier(BaseEstimator, ClassifierMixin, TransformerMixin):
         self.H_ = self.core_.H.detach().cpu().numpy()[0]   # (K, N)
         self.B_ = self.core_.B.detach().cpu().numpy()[0]   # (C, K)
 
-        self.reconstruction_err_ = float(self.core_._fro_loss.item())
+        # --- keep raw, unnormalized reconstruction loss (absolute Frobenius) ---
+        self.reconstruction_err_ = float(
+            torch.norm(self.core_._V - self.core_.reconstruction, p="fro").item()
+        )
+
         self.history_ = dict(self.core_.results)
         self.converged_at_ = int(getattr(self.core_, "_conv", 0))
         return self
+
+
+    def reconstruction_error(self, X):
+        """Compute raw (unnormalized) Frobenius reconstruction loss."""
+        check_is_fitted(self, "W_")
+        H = self.transform(X).T               # (K, N)
+        X_hat = (self.W_ @ H).T               # (N, F)
+
+        # --- old-style absolute Frobenius (no normalization by ||X||) ---
+        err = np.linalg.norm(X - X_hat, ord="fro")
+        return float(err)
+
+
+
 
     def transform(self, X):
         """Project new X -> H with W fixed (uses your core.refit, lambda_c=0 inside)."""
@@ -190,10 +244,10 @@ class SNMFClassifier(BaseEstimator, ClassifierMixin, TransformerMixin):
         idx = self.predict_proba(X).argmax(axis=1)
         return np.asarray(self.classes_)[idx]
 
-    def reconstruction_error(self, X):
-        check_is_fitted(self, "W_")
-        H = self.transform(X).T               # (K, N)
-        X_hat = (self.W_ @ H).T               # (N, F)
-        num = np.linalg.norm(X - X_hat, ord='fro')
-        den = np.linalg.norm(X, ord='fro') + 1e-30
-        return float(num / den)
+    # def reconstruction_error(self, X):
+    #     check_is_fitted(self, "W_")
+    #     H = self.transform(X).T               # (K, N)
+    #     X_hat = (self.W_ @ H).T               # (N, F)
+    #     num = np.linalg.norm(X - X_hat, ord='fro')
+    #     den = np.linalg.norm(X, ord='fro') + 1e-30
+    #     return float(num / den)
