@@ -1,3 +1,7 @@
 De_Novo_Mutation_Probabilities.txt
 */De_Novo_MutationType_Probabilities*.txt
 */Decomposed_MutationType_Probabilities*.txt
+*.DS_Store
+data/processed/**/Decomposed_MutationType_Probabilities.txt
+results/**/Decomposed_MutationType_Probabilities.txt
+data/raw/zou2021/.ipynb_checkpoints/
