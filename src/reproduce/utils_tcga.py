@@ -440,6 +440,18 @@ def plot_ddr_signature(
     status_map = {'WT': 0, 'HET': 1, 'HOM': 2}
     status_matrix = status_matrix_df.replace(status_map).T.values  # genes x samples
 
+#! CHECK
+    # --- Print counts per gene ---
+    for gene in status_matrix_df.columns:
+        counts = status_matrix_df[gene].value_counts()
+
+        n_wt  = counts.get('WT', 0)
+        n_het = counts.get('HET', 0)
+        n_hom = counts.get('HOM', 0)
+
+        print(f"{gene}: WT={n_wt}, HET={n_het}, HOM={n_hom}")
+
+
     # --- Pathway exposures ---
     exposures_df = as_df(
         adata.uns['exposures_test'],
@@ -486,12 +498,39 @@ def plot_ddr_signature(
         cosmic_data = np.zeros((0, len(samples)))  # empty
 
     mut_count = np.array(adata.uns['mutation_count']).reshape(-1)[order].astype(float)
-    #! Few mutation count outlier skew range...
-    mut_count_max = np.percentile(mut_count, 99.8)
-    if mut_count_max == 0:
-        mut_count_max = 1
-    mut_count_norm = mut_count
-    mut_count_row = mut_count_norm.reshape(1, -1)
+
+    # #! Few mutation count outlier skew range...
+    # mut_count_max = np.percentile(mut_count, 99.5)
+    # if mut_count_max == 0:
+    #     mut_count_max = 1
+    # mut_count_norm = mut_count
+    # mut_count_row = mut_count_norm.reshape(1, -1)
+
+
+    # # #! LOG TMB?
+    # mut_count_raw = np.array(adata.uns['mutation_count']).reshape(-1)[order].astype(float)
+
+    # # log10(1+x) transform for plotting
+    # mut_count_plot = np.log10(mut_count_raw + 1.0)
+    # mut_count_plot_max = np.percentile(mut_count_plot, 99.8)
+    # if mut_count_plot_max == 0:
+    #     mut_count_plot_max = 1
+    # mut_count_row = mut_count_plot.reshape(1, -1)
+
+
+    #! --- Mutation count (log for plotting, raw labels on colorbar) ---
+    mut_count_raw = np.array(adata.uns['mutation_count']).reshape(-1)[order].astype(float)
+
+    # clamp to 20000 for visualization (so legend max is meaningful and stable)
+    mut_cap = 20000.0
+    mut_count_raw_cap = np.minimum(mut_count_raw, mut_cap)
+
+    # log10(1+x) transform for plotting
+    mut_count_plot = np.log10(mut_count_raw_cap + 1.0)
+    mut_count_plot_max = np.log10(mut_cap + 1.0)
+
+    mut_count_row = mut_count_plot.reshape(1, -1)
+
 
     # --- Labels ---
     row_labels_cat = genes
@@ -505,7 +544,7 @@ def plot_ddr_signature(
     # --- Figure ---
     n_cosmic = len(selected_sigs_in_data)
     heights = [2, max(1, len(genes)), max(1, n_cosmic), 0.6]
-    fig, axes = plt.subplots(4, 1, gridspec_kw={'height_ratios': heights}, figsize=(6.2, 6), sharex=True)
+    fig, axes = plt.subplots(4, 1, gridspec_kw={'height_ratios': heights}, figsize=(7.2, 4), sharex=True)
 
     # 1) E/Y heatmap
     top = np.vstack([E_pathway, Y_pathway])
@@ -515,6 +554,62 @@ def plot_ddr_signature(
     axes[0].hlines([1], *axes[0].get_xlim(), color='white')
     axes[0].set_xticks([])
     axes[0].tick_params(left=False, bottom=False)
+
+
+# #! CHECK
+#     # --- Sanity check: counts preserved after ordering / conversion ---
+#     def _counts_from_status_df(df):
+#         # df: samples x genes with 'WT','HET','HOM'
+#         out = {}
+#         for g in df.columns:
+#             vc = df[g].value_counts()
+#             out[g] = (int(vc.get('WT', 0)), int(vc.get('HET', 0)), int(vc.get('HOM', 0)))
+#         return out
+
+#     def _counts_from_status_matrix(mat, genes_order):
+#         # mat: genes x samples with 0/1/2 (WT/HET/HOM)
+#         out = {}
+#         for i, g in enumerate(genes_order):
+#             row = mat[i, :]
+#             out[g] = (int(np.sum(row == 0)), int(np.sum(row == 1)), int(np.sum(row == 2)))
+#         return out
+
+#     # counts BEFORE ordering (from the dataframe)
+#     pre_counts = _counts_from_status_df(status_matrix_df)
+
+#     # counts AFTER ordering (from the matrix actually being plotted)
+#     post_counts = _counts_from_status_matrix(status_matrix, list(row_labels_cat))
+
+#     print("---- Mutation status counts: pre vs post (WT, HET, HOM) ----")
+#     for g in row_labels_cat:
+#         a = pre_counts.get(g, (0, 0, 0))
+#         b = post_counts.get(g, (0, 0, 0))
+#         flag = "" if a == b else "  <-- MISMATCH"
+#         print(f"{g}: pre={a} post={b}{flag}")
+
+#     # Optional: hard fail if anything differs
+#     mismatches = [g for g in row_labels_cat if pre_counts.get(g) != post_counts.get(g)]
+#     if mismatches:
+#         raise RuntimeError(f"Status count mismatch after ordering for genes: {mismatches}")
+
+#     # --- Hard alignment checks (before plotting) ---
+#     n = len(samples)
+#     print("---- Alignment check ----")
+#     print("n samples total:", n)
+#     print("E_pathway:", E_pathway.shape)
+#     print("Y_pathway:", Y_pathway.shape)
+#     print("status_matrix (genes x samples):", status_matrix.shape)
+#     print("cosmic_data (sigs x samples):", cosmic_data.shape)
+#     print("mut_count_row:", mut_count_row.shape)
+
+#     # Ensure everything matches the plotted x-axis length
+#     expected = status_matrix.shape[1]
+#     assert E_pathway.shape[0] == expected
+#     assert Y_pathway.shape[0] == expected
+#     assert mut_count_row.shape[1] == expected
+#     assert cosmic_data.shape[1] == expected, f"cosmic_data has {cosmic_data.shape[1]} cols, expected {expected}"
+#     print("OK: all panels have same sample count =", expected)
+
 
     # 2) Mutation status heatmap
     sns.heatmap(status_matrix, ax=axes[1], cmap=cmap_cat, cbar=False, linewidth=0)
@@ -534,7 +629,14 @@ def plot_ddr_signature(
     axes[2].tick_params(left=False, bottom=False)
 
     # 4) Mutation count heatmap
-    sns.heatmap(mut_count_row, ax=axes[3], cmap=cmap_blue, cbar=False, vmin=0, vmax=mut_count_max)
+    # sns.heatmap(mut_count_row, ax=axes[3], cmap=cmap_blue, cbar=False, vmin=0, vmax=mut_count_max)
+    # 4) Mutation count heatmap (LOG values)
+    hm3 = sns.heatmap(
+        mut_count_row, ax=axes[3], cmap=cmap_blue, cbar=False,
+        vmin=0, vmax=mut_count_plot_max
+    )
+    # optional but recommended for PDF: avoid "missing columns" artifacts
+    hm3.collections[0].set_rasterized(True)
     axes[3].set_yticks([0.5])
     axes[3].set_yticklabels(["Mutation count"], rotation=0)
     axes[3].set_xticks([])
@@ -603,11 +705,30 @@ def plot_ddr_signature(
             cax_cosmic.axis('off')
 
     # 4) Mutation count colorbar
+    # cax_mut = cbar_axes[6]
+    # cax_mut.clear()
+    # cbar3 = fig.colorbar(cm.ScalarMappable(norm=Normalize(0, mut_count_max), cmap=cmap_blue), cax=cax_mut, orientation='vertical')
+    # cbar3.ax.yaxis.set_ticks_position('left')
+    # cbar3.set_label('Mutation count', labelpad=3, fontsize=9)
+    # cbar3.ax.tick_params(labelsize=8)
+    # cax_mut.yaxis.set_ticks_position('left')
+    # cax_mut.axis('on')
+
+    # 4) Mutation count colorbar (log-scale values, raw labels)
     cax_mut = cbar_axes[6]
     cax_mut.clear()
-    cbar3 = fig.colorbar(cm.ScalarMappable(norm=Normalize(0, mut_count_max), cmap=cmap_blue), cax=cax_mut, orientation='vertical')
+
+    mappable = cm.ScalarMappable(norm=Normalize(0, mut_count_plot_max), cmap=cmap_blue)
+    cbar3 = fig.colorbar(mappable, cax=cax_mut, orientation='vertical')
     cbar3.ax.yaxis.set_ticks_position('left')
     cbar3.set_label('Mutation count', labelpad=3, fontsize=9)
+
+    raw_ticks = np.array([0, 20, 200, 2000, 20000], dtype=float)
+    tick_locs = np.log10(raw_ticks + 1.0)
+
+    cbar3.set_ticks(tick_locs)
+    cbar3.set_ticklabels([f"{int(x)}" for x in raw_ticks])
+
     cbar3.ax.tick_params(labelsize=8)
     cax_mut.yaxis.set_ticks_position('left')
     cax_mut.axis('on')
@@ -815,3 +936,152 @@ def plot_mw_gene_stats(
         plt.close(fig)
 
     return annotated
+
+
+
+# 2 way Anova (mutation status + TMB)
+from statsmodels.stats.multitest import multipletests
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+
+def run_2way_anova_gene_signature_test(
+    adata,
+    sig_matrix_key,
+    sig_col,
+    ddr,
+    mutcount_key="mutation_count",
+    transform_exposure=None,
+    include_interaction=False,
+    direction="greater",      # "greater" | "less" | "two-sided"
+    fdr_thresh=0.05,
+    min_wt=5,
+    min_mut=5,
+    verbose=True,
+):
+    # --- Checks ---
+    if sig_matrix_key not in adata.uns:
+        raise ValueError(f"{sig_matrix_key} not found in adata.uns.")
+    if "pathway" not in adata.uns:
+        raise ValueError("Pathway labels not found in adata.uns['pathway'].")
+    if mutcount_key not in adata.uns:
+        raise ValueError(f"'{mutcount_key}' not found in adata.uns.")
+    if direction not in {"greater", "less", "two-sided"}:
+        raise ValueError("direction must be 'greater', 'less', or 'two-sided'.")
+
+    # --- exposures ---
+    exp_obj = adata.uns[sig_matrix_key]
+    if isinstance(exp_obj, pd.DataFrame):
+        matrix_df = exp_obj.reindex(index=adata.obs_names)
+    else:
+        matrix_df = pd.DataFrame(exp_obj, index=adata.obs_names)
+    if sig_col not in matrix_df.columns:
+        raise ValueError(f"{sig_col} not found in {sig_matrix_key}.")
+    y = matrix_df[sig_col].astype(float)
+
+    # --- pathway labels ---
+    pathway_df = pd.DataFrame(adata.uns["pathway"], index=adata.obs_names)
+    if ddr not in pathway_df.columns:
+        raise ValueError(f"DDR class '{ddr}' not found in pathway columns.")
+    pathway_labels = pathway_df[ddr].astype(int)
+
+    # --- burden ---
+    mutcount = adata.uns[mutcount_key]
+    if isinstance(mutcount, pd.Series):
+        mutcount = mutcount.reindex(adata.obs_names)
+    else:
+        mutcount = pd.Series(mutcount, index=adata.obs_names)
+    burden = np.log1p(mutcount.astype(float))
+
+    # --- gene mutation matrices ---
+    gene_het = pd.DataFrame(adata.uns["gene_het"], index=adata.obs_names, columns=adata.uns["gene_colnames"])
+    gene_hom = pd.DataFrame(adata.uns["gene_hom"], index=adata.obs_names, columns=adata.uns["gene_colnames"])
+    all_genes = sorted(set(gene_het.columns).union(set(gene_hom.columns)))
+    gene_het = gene_het.reindex(columns=all_genes, fill_value=0)
+    gene_hom = gene_hom.reindex(columns=all_genes, fill_value=0)
+    gene_mut = ((gene_het > 0) | (gene_hom > 0))
+
+    # --- optional transform ---
+    y_model = y.copy()
+    if transform_exposure == "log1p":
+        y_model = np.log1p(y_model)
+    elif transform_exposure == "logit":
+        eps = 1e-6
+        y_clamped = np.clip(y_model, eps, 1 - eps)
+        y_model = np.log(y_clamped / (1 - y_clamped))
+    elif transform_exposure is None:
+        pass
+    else:
+        raise ValueError("transform_exposure must be None, 'log1p', or 'logit'.")
+
+    results = []
+    for gene in all_genes:
+        mut_status = gene_mut[gene].astype(bool)
+        if mut_status.sum() == 0:
+            continue
+
+        wt_mask  = (~mut_status) & (pathway_labels == 0)
+        mut_mask = mut_status
+        if wt_mask.sum() < min_wt or mut_mask.sum() < min_mut:
+            continue
+
+        use_mask = wt_mask | mut_mask
+        df_design = pd.DataFrame({
+            "y": y_model.loc[use_mask],
+            "mut": mut_status.loc[use_mask].astype(int),
+            "burden": burden.loc[use_mask].astype(float),
+        }).replace([np.inf, -np.inf], np.nan).dropna()
+        if df_design.shape[0] < (min_wt + min_mut):
+            continue
+
+        if include_interaction:
+            df_design["mut_x_burden"] = df_design["mut"] * df_design["burden"]
+            X = df_design[["mut", "burden", "mut_x_burden"]]
+        else:
+            X = df_design[["mut", "burden"]]
+        X = sm.add_constant(X, has_constant="add")
+
+        try:
+            model = sm.OLS(df_design["y"], X).fit()
+        except Exception:
+            continue
+
+        beta = float(model.params.get("mut", np.nan))
+        p2 = float(model.pvalues.get("mut", np.nan))  # two-sided
+
+        # convert to directional if requested
+        if np.isnan(beta) or np.isnan(p2):
+            p_use = np.nan
+        elif direction == "two-sided":
+            p_use = p2
+        elif direction == "greater":  # H1: beta > 0
+            p_use = p2/2 if beta > 0 else 1 - p2/2
+        else:  # "less": H1: beta < 0
+            p_use = p2/2 if beta < 0 else 1 - p2/2
+
+        results.append({
+            "Gene": gene,
+            "N_mut": int(mut_mask.sum()),
+            "N_wt": int(wt_mask.sum()),
+            "beta_mut": beta,
+            "p_mut_2sided": p2,
+            "p_mut": p_use,   # this is the one used for FDR
+            "r2": float(model.rsquared),
+        })
+
+    if not results:
+        print(f"No valid genes to test for {sig_col}.")
+        return adata
+
+    res_df = pd.DataFrame(results).set_index("Gene")
+    res_df["fdr_mut"] = multipletests(res_df["p_mut"].fillna(1.0), method="fdr_bh")[1]
+
+    adata.uns[f"ANOVA_results_{sig_col}"] = res_df
+
+    if verbose:
+        sig_genes = res_df.query("fdr_mut < @fdr_thresh").sort_values("fdr_mut")
+        print(f"[{sig_col}] Significant genes (direction={direction}, FDR<{fdr_thresh}):")
+        print(sig_genes.index.tolist())
+
+    return adata
+

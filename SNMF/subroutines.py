@@ -2009,15 +2009,15 @@ def stabVsRError(csvfile, output, title, all_similarities_list, input_type="csvf
     if type(select)!=type(None):
         final_solution=select
 
-    #! DEBUG   
-    print("data shape:", data.shape)
-    print("mean_l1 len:", len(mean_l1))
-    print("mean_l1:", mean_l1)
-    if len(mean_l1) != len(data):
-        print("Padding results with NaN due to length mismatch.")
-        pad_len = len(data)
-        mean_l1 = [np.nan] * pad_len
-        maximum_l1 = [np.nan] * pad_len
+    # #! DEBUG   
+    # print("data shape:", data.shape)
+    # print("mean_l1 len:", len(mean_l1))
+    # print("mean_l1:", mean_l1)
+    # if len(mean_l1) != len(data):
+    #     print("Padding results with NaN due to length mismatch.")
+    #     pad_len = len(data)
+    #     mean_l1 = [np.nan] * pad_len
+    #     maximum_l1 = [np.nan] * pad_len
 
     data.iloc[:,2] = np.round(data.iloc[:,2]*100, 2)
     data = data.assign(**{'Mean Sample L1%': mean_l1, 

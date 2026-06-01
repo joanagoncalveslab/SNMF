@@ -802,8 +802,8 @@ def sigProfilerExtractor(input_type,
                 all_sol = "/All_solutions_stat_filter.csv"
             
             #! Debug:
-            print("len(all_similarities_list):", len(all_similarities_list))
-            print("j:", j)
+            # print("len(all_similarities_list):", len(all_similarities_list))
+            # print("j:", j)
 
             solution, all_stats = sub.stabVsRError(layer_directory+all_sol, layer_directory, title, all_similarities_list[j], mtype=mutation_type, stability=stability, min_stability=min_stability, combined_stability=combined_stability)
             all_stats.insert(1, 'Stability (Avg Silhouette)', minimum_stabilities[j]) #!!!!!!!!!!!!!!!!1 here minimum stability is avg stability
@@ -890,7 +890,7 @@ def sigProfilerExtractor(input_type,
     sysdata.write("Analysis of mutational signatures completed successfully! \nTotal execution time: "+str(end_time-start_time).split(".")[0]+" \nResults can be found in: "+" "+out_put+ " " +" folder")
     sysdata.close()
 
-    print("\n\n \nYour Job Is Successfully Completed! Thank You For Using SigProfiler Extractor.\n ")
+    print("\n\n \nYour Job Is Successfully Completed! Thank You For Using SNMF Signature Extractor.\n ")
 
 
     # return np.mean(acc), np.mean(f1), np.mean(Lrec), np.mean(Lce), np.mean(Ltot), np.mean(epochs), n_filter,    \
@@ -989,8 +989,61 @@ def test_sigProfilerExtractor(input_type,
 
     data = pd.read_csv(test_data, sep="\t").iloc[:, :]
     label = pd.read_csv(test_label, sep="\t").iloc[:, :]
-    data = data.dropna(axis=1, inplace=False)
-    data = data.loc[:, (data != 0).any(axis=0)]
+    # data = data.dropna(axis=1, inplace=False)
+    # data = data.loc[:, (data != 0).any(axis=0)]
+
+
+    # print("\n[TEST] Loading files:")
+    # print("  X path:", test_data)
+    # print("  Y path:", test_label)
+
+    # # --- LOAD ---
+    # data  = pd.read_csv(test_data, sep="\t")
+    # label = pd.read_csv(test_label, sep="\t")
+
+    # X_cols_raw = list(data.columns[1:])
+    # Y_cols_raw = list(label.columns[1:])
+
+    # print("\n[DEBUG] Raw shapes:")
+    # print("  X:", data.shape)
+    # print("  Y:", label.shape)
+
+    # # --- APPLY X FILTERS (SigPro behaviour) ---
+    # data_f = data.dropna(axis=1)
+    # data_f = data_f.loc[:, (data_f != 0).any(axis=0)]
+
+    # X_cols_kept = list(data_f.columns[1:])
+    # X_cols_dropped = sorted(set(X_cols_raw) - set(X_cols_kept))
+
+    # print("\n[DEBUG] X filtering:")
+    # print("  Kept X:", len(X_cols_kept))
+    # print("  Dropped X:", len(X_cols_dropped))
+    # print("  Dropped X examples:", X_cols_dropped[:])
+
+    # # --- CHECK Y FOR THOSE SAME SAMPLES ---
+    # Y_present = [c for c in X_cols_dropped if c in Y_cols_raw]
+    # Y_missing = [c for c in X_cols_dropped if c not in Y_cols_raw]
+
+    # print("\n[DEBUG] Corresponding Y columns:")
+    # print("  Present in Y:", len(Y_present))
+    # print("  Missing in Y:", len(Y_missing))
+    # print("  Present-in-Y examples:", Y_present[:])
+
+    # # show the actual X values for dropped samples
+    # print("\n[DEBUG] Dropped X columns – raw values:")
+    # X_raw = data.iloc[:, 1:]   # 96 x N
+    # for c in X_cols_dropped[:5]:   # first 5 only
+    #     print(f"\n{c}")
+    #     print(X_raw[c])
+
+
+    # print("\n[DEBUG] Corresponding Y values:")
+    # Y_raw = label.iloc[:, 1:]
+    # for c in X_cols_dropped[:5]:
+    #     print(f"\n{c}")
+    #     print(Y_raw[c])
+
+
     X_test = data.iloc[:, 1:]
     X_test = np.array(X_test)
     allgenomes = X_test.copy()  # save the allgenomes for the final results
@@ -1098,9 +1151,9 @@ def test_sigProfilerExtractor(input_type,
 
     acc = np.sum(Y_pred == Y_test)/Y_test.shape[0]
     f1 = metrics.f1_score(Y_test, Y_pred, average='macro')
-    print(n)
+    print("number of test samples: ", n)
     print("accuracy = ", acc)
-    print(f1)
+    print("F1-score = ", f1)
     Y_pred_1h = np.zeros((Y_pred.size, Y_pred.max() + 1))
     Y_pred_1h[np.arange(Y_pred.size), Y_pred] = 1
     np.save(output_path + '/Y_pred_N{}.txt'.format(n), Y_pred_1h)
